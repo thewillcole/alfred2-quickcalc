@@ -4,6 +4,8 @@ An alternative calculator for [Alfred 2][alfred], supporting custom functions an
 
 It's essentially a wrapper around bc with a few extras added in.
 
+![QuickCalc in action.][screenshot]
+
 ## Installation
 
 Simply [download the workflow][dl] and open the file. You'll need to have the Powerpack to install workflows.
@@ -60,6 +62,7 @@ The workflow currently doesn't have support for detecting locales. It expects a 
 - [phodd's collection of functions][functions], some of which are used here.
 
 [dl]: http://clintonstrong.com/alfred/Quick%20Calc.alfredworkflow
+[screenshot]: http://clintonstrong.com/img/alfred/quickcalc.png
 [alfred]: http://www.alfredapp.com
 [man-page]: http://developer.apple.com/library/mac/#documentation/Darwin/Reference/ManPages/man1/bc.1.html
 [wiki]: http://en.wikipedia.org/wiki/Bc_programming_language
