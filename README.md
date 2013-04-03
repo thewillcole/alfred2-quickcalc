@@ -59,7 +59,7 @@ The workflow currently doesn't have support for detecting locales. It expects a 
 - [bc programming language on Wikipedia][wiki]
 - [phodd's collection of functions][functions], some of which are used here.
 
-[dl]: http://clintonstrong.com/alfred/Quick%20Calc.workflow
+[dl]: http://clintonstrong.com/alfred/Quick%20Calc.alfredworkflow
 [alfred]: http://www.alfredapp.com
 [man-page]: http://developer.apple.com/library/mac/#documentation/Darwin/Reference/ManPages/man1/bc.1.html
 [wiki]: http://en.wikipedia.org/wiki/Bc_programming_language
