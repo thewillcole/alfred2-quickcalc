@@ -3,7 +3,7 @@ require 'shellwords'
 class QuickCalc
   # Adds commas as a thousands separator
   # TODO: Support other locales
-  def self.format_number(num)
+  def format_number(num)
     num_parts = num.to_s.split('.')
     formatted_number = num_parts.first.reverse.gsub(/...(?=.)/,'\&,').reverse
     formatted_number += '.' + num_parts[1] if num_parts.length > 1
@@ -12,7 +12,7 @@ class QuickCalc
 
   # Basically just converts a float to an int if it ends in .0
   # ...I'm bad at naming things.
-  def self.remove_trailing_zero(float)
+  def remove_trailing_zero(float)
     if float - float.to_i == 0
       float.to_i
     else
@@ -21,37 +21,40 @@ class QuickCalc
   end
 
   def initialize(query, functions_file, custom_file)
-    @query = query
-    @number_pattern = /[-+]?([0-9]*\.[0-9]+|[0-9]+)/
+    @query = query.dup
+    @number_pattern = /([0-9]*\.[0-9]+|[0-9]+)/
 
-    f = File.open(custom_file, 'r')
-    custom = f.read
-    f.close
+    custom = File.open(custom_file) {|f| f.read }
+    defaults = File.open(functions_file) {|f| f.read}
 
-    f = File.open(functions_file, 'r')
-    defaults = f.read
-    f.close
+    balance_parentheses
+    @query.strip!
+    remove_trailing_operators
 
-    @query = self.balance_parentheses(@query)
-    @query = @query.strip
-    @query = self.remove_trailing_operators(@query)
+    @query = custom + "\n" + @query
 
-    @query = custom << "\n" << @query
+    convert_thousands_suffixes
+    replace_variables
+    of_to_mult
+    remove_superfluous_characters
+    convert_percents
 
-    @query = self.convert_thousands_suffixes(@query)
-    @query = self.replace_variables(@query)
-    @query = self.of_to_mult(@query)
-    @query = self.remove_superfluous_characters(@query)
-    @query = self.convert_percents(@query)
+    @query.gsub!('π', 'pi')
+    @query.gsub!('**', '^')
 
-    @query = @query.gsub('π', 'pi')
-    @query = @query.gsub('**', '^')
-
-    @query = defaults << "\n" << @query
+    @query = defaults + "\n" + @query
   end
 
   def calculate
     `echo #{Shellwords.escape(@query)} | bc -l 2>&1`.strip
+  end
+
+  def functions
+    @functions || (@functions = find_functions(@query))
+  end
+
+  def variables
+    @variables || (@variables = find_variables(@query))
   end
 
   # Auto-closes parentheses so we can get immediate results.
@@ -60,58 +63,56 @@ class QuickCalc
   # the query, or after the last semicolon (bc doesn't like variable definitions
   # being wrapped in parens)). Once we're done, add any necessary closing parens
   # to the end.
-  def balance_parentheses(query)
-    query = query.dup
+  def balance_parentheses
     num_open = 0
     num_closed = 0
-    query_start = (query.rindex(';') || -1) + 1
+    query_start = (@query.rindex(';') || -1) + 1
 
-    query.each_char do |char|
+    @query.each_char do |char|
       if char == '('
         num_open += 1
       elsif char == ')'
         num_closed += 1
         if num_closed > num_open
-          query = query.insert(query_start, '(')
+          @query.insert(query_start, '(')
           num_open += 1
         end
       end
     end
 
     if num_open > num_closed
-      query << ')' * (num_open - num_closed)
-    else
-      query
+      @query << ')' * (num_open - num_closed)
     end
   end
 
   # Prevents it from showing 0 immediately after typing a new operator
-  def remove_trailing_operators(query)
+  def remove_trailing_operators
     operators = %w[+ - / * ^ = (]
-    last_char = query[query.length - 1, 1]
+    last_char = @query[@query.length - 1, 1]
 
     if operators.include?(last_char)
-      self.remove_trailing_operators(query.chop)
-    else
-      query
+      @query.chop!
+      remove_trailing_operators
     end
   end
 
-  def remove_superfluous_characters(query)
+  def remove_superfluous_characters
     # Remove spaces between numbers
-    query.gsub(/(\d+)\s+(\d+)/, '\1\2')
+    @query.gsub!(/(\d+)\s+(\d+)/, '\1\2')
     # Removes commas that aren't followed by a space. If you want to separate
     # function arguments, press space after the comma.
-    query = query.gsub(/,(?! )/, '')
+    @query.gsub!(/,(?! )/, '')
     # Remove some common currency signs
-    query = query.gsub('$', '').gsub('£', '').gsub('€', '')
+    @query.gsub!('$', '')
+    @query.gsub!('£', '')
+    @query.gsub!('€', '')
     # Remove underscores after a number so they can be used as a thousands
     # separator, but still work in variable/function names.
-    query = query.gsub(/(\d)_/, '\1')
+    @query.gsub!(/(\d)_/, '\1')
   end
 
-  def convert_thousands_suffixes(query)
-    query = query.gsub(/(#{@number_pattern})(k|m|b| thousand| million| billion)/) do |match|
+  def convert_thousands_suffixes
+    @query.gsub!(/(#{@number_pattern})(k|m|b| thousand| million| billion)/) do |match|
       if $3 == 'k' || $3 == ' thousand'
         "#{$2}*1000"
       elsif $3 == 'm' || $3 == ' million'
@@ -120,25 +121,16 @@ class QuickCalc
         "#{$2}*1000000000"
       end
     end
-    query
   end
-
-  # TODO: Make this work with expressions other than integer literals
-  # This attempts the fix the issue with scale affecting modulus by using a bc
-  # function instead. Only works with integer literals right now.
-  # def convert_mod(query)
-  #   query = query.gsub(/\b(\w|\d+)\s+mod\s+(\w|\d+)\b/, 'mod(\1, \2)')
-  #   query = query.gsub(/\b(\d+)mod(\d+)\b/, 'mod(\1, \2)')
-  # end
 
   # Make 'of' an alias of '*'
-  def of_to_mult(query)
-    query.gsub(/\s+of\s+/, '*')
+  def of_to_mult
+    @query.gsub!(/\s+of\s+/, '*')
   end
 
-  def convert_percents(query)
+  def convert_percents
     # If we add/subtract a percent, we multiply/divide by 1 + (percent / 100)
-    query = query.gsub(/(\+|\-)\s*(#{@number_pattern})%/) do |match|
+    @query.gsub!(/(\+|\-)\s*(#{@number_pattern})%/) do |match|
       if $1 == '+'
         "*#{($3.to_f / 100) + 1}"
       else
@@ -147,7 +139,7 @@ class QuickCalc
     end
     
     # All other percents: just divide by 100
-    query = query.gsub(/(#{@number_pattern})%/) {|num| ($1.to_f / 100).to_s }
+    @query.gsub!(/(#{@number_pattern})%/) {|num| ($1.to_f / 100).to_s }
   end
 
   # Returns an array of ranges for all functions
@@ -173,12 +165,25 @@ class QuickCalc
     function_ranges
   end
 
+  def index_in_function?(start_index)
+    functions.each do |range|
+      return true if range.include?(start_index)
+    end
+    false
+  end
+
+  def index_in_var_declaration?(start_index)
+    variables.each do |range|
+      return true if range.include?(start_index)
+    end
+    false
+  end
+
   # Returns an array containing hashes representing the variables, containing the
   # name, value, and range of the variable
   # Note: doesn't include variables in a function
   def find_variables(query)
     variables = []
-    function_ranges = self.find_functions(query)
     variable_declaration = /
       (?:^|;|\n)        # match the start of a statement (semicolons and newlines
         \s*             # separate statements)
@@ -198,58 +203,45 @@ class QuickCalc
       start_index = Regexp.last_match.begin(0)
       length = Regexp.last_match.to_s.length
       
-      is_var_in_function = false
-      function_ranges.each do |range|
-        if range.include?(start_index)
-          is_var_in_function = true
-          break
-        end
-      end
-      
       variables << {
         :name => match[0],
         :value => match[2],
         :range => (start_index...start_index + length)
-      } unless is_var_in_function
+      } unless index_in_function?(start_index)
     end
     variables
   end
 
-  def replace_variables(query)
-    query = query.dup
-    variables = self.find_variables(query)
-    function_ranges = self.find_functions(query)
-    
-    return query if variables.length == 0
-    
+  def replace_variable(query, var, begin_pos)
+    variable_pattern = /([^a-z0-9_])#{var[:name]}(?!\w)/
+
+    query = query.gsub(variable_pattern) do |match|
+      if index_in_var_declaration?($~.begin(0) + begin_pos) || index_in_function?($~.begin(0) + begin_pos)
+        match
+      elsif var[:value] =~ @number_pattern
+        var[:value]
+      else
+        "(#{var[:value]})"
+      end
+    end
+
+    query
+  end
+
+  # Replace instances of variables with the last defined value of that variable
+  def replace_variables
     variables.each_with_index do |var, i|
       begin_pos = var[:range].last + 1
       if variables[i + 1]
         end_pos = variables[i + 1][:range].first
       else
-        end_pos = query.length
+        end_pos = @query.length
       end
-      
+
       variables.first(i + 1).reverse_each do |current_var|
-        next unless query[begin_pos...end_pos]
-        query[begin_pos...end_pos] = query[begin_pos...end_pos].gsub(/([^a-z0-9_])#{current_var[:name]}(?!\w)/) do |match|
-          last_match = Regexp.last_match
-          if current_var[:value] =~ /[-+]?([0-9]*\.[0-9]+|[0-9]+)%?/
-            num = current_var[:value]
-          else
-            num = "(#{current_var[:value]})"
-          end
-          val = "#{last_match[1]}#{num}"
-          function_ranges.each do |range|
-            if range.include?(last_match.begin(0) + begin_pos)
-              val = match
-              break
-            end
-          end
-          val
-        end
+        next unless @query[begin_pos...end_pos]
+        @query[begin_pos...end_pos] = replace_variable(@query[begin_pos...end_pos], current_var, begin_pos)
       end
     end
-    query
   end
 end

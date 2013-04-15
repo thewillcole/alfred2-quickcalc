@@ -29,7 +29,7 @@ result = qc.calculate
 
 error_found = result.include?('error')
 
-answer = QuickCalc::remove_trailing_zero(result.to_f)
+answer = qc.remove_trailing_zero(result.to_f)
 
 if $?.exitstatus > 0 || error_found
   valid = 'no'
@@ -38,7 +38,7 @@ if $?.exitstatus > 0 || error_found
   subtitle = 'Please enter a valid expression'
 else
   valid = 'yes'
-  formatted_answer = QuickCalc::format_number(answer)
+  formatted_answer = qc.format_number(answer)
   subtitle = 'Action this item to copy this number to the clipboard'
 end
 
