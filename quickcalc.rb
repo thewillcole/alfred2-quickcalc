@@ -36,6 +36,7 @@ class QuickCalc
     convert_thousands_suffixes
     replace_variables
     of_to_mult
+    x_to_mult
     remove_superfluous_characters
     convert_percents
 
@@ -87,10 +88,13 @@ class QuickCalc
 
   # Prevents it from showing 0 immediately after typing a new operator
   def remove_trailing_operators
-    operators = %w[+ - / * ^ = (]
+    operators = %w[+ - / * ^ (]
+
     last_char = @query[@query.length - 1, 1]
 
-    if operators.include?(last_char)
+    # Check if it ends with an operator (including 'x' for multiplication)
+    # Make sure 'x' is an operator, and not just part of a variable name
+    if operators.include?(last_char) || (@query =~ /([^a-z_]+[0-9]*)x$/) != nil
       @query.chop!
       remove_trailing_operators
     end
@@ -98,7 +102,7 @@ class QuickCalc
 
   def remove_superfluous_characters
     # Remove spaces between numbers
-    @query.gsub!(/(\d+)\s+(\d+)/, '\1\2')
+    @query.gsub!(/(\d+)[\t ]+(\d+)/, '\1\2')
     # Removes commas that aren't followed by a space. If you want to separate
     # function arguments, press space after the comma.
     @query.gsub!(/,(?! )/, '')
@@ -125,12 +129,16 @@ class QuickCalc
 
   # Make 'of' an alias of '*'
   def of_to_mult
-    @query.gsub!(/\s+of\s+/, '*')
+    @query.gsub!(/[\t ]+of[\t ]+/, '*')
+  end
+
+  def x_to_mult
+    @query.gsub!(/(#{@number_pattern}%?[\t ]*|[\(\)][\t ]*)x([\t ]*[\(\)]|[\t ]*#{@number_pattern}%?)/, '\1*\3')
   end
 
   def convert_percents
     # If we add/subtract a percent, we multiply/divide by 1 + (percent / 100)
-    @query.gsub!(/(\+|\-)\s*(#{@number_pattern})%/) do |match|
+    @query.gsub!(/(\+|\-)[\t ]*(#{@number_pattern})%/) do |match|
       if $1 == '+'
         "*#{($3.to_f / 100) + 1}"
       else
@@ -145,7 +153,7 @@ class QuickCalc
   # Returns an array of ranges for all functions
   def find_functions(query)
     function_ranges = []
-    function_heading = /define\s+([a-z][a-z0-9_]*).*\{/
+    function_heading = /define[\t ]+([a-z][a-z0-9_]*).*\{/
     query.scan(function_heading) do |match|
       start_index = Regexp.last_match.begin(0)
       heading_length = Regexp.last_match.to_s.length
@@ -186,13 +194,13 @@ class QuickCalc
     variables = []
     variable_declaration = /
       (?:^|;|\n)        # match the start of a statement (semicolons and newlines
-        \s*             # separate statements)
+        [\t ]*             # separate statements)
         
       ([a-z][a-z0-9_]*) # match a variable name; must be lowercase and start with
-        \s*             # a letter, and can contain numbers and underscores
+        [\t ]*             # a letter, and can contain numbers and underscores
         
       (\+|-|\/|\*|)=    # find an equal sign, optionally with an operator prefix
-        \s*
+        [\t ]*
         
       ([^;\n$]*)        # get the value of the variable, up until the end of the
                         # statement
